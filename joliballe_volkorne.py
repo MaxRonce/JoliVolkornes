@@ -16,13 +16,13 @@ class Volkorne:
         self,
         vol_id: str,
         sex: str,
-        nb_repro: int = 0,
+        partenaire: str = "NAN",
         father: Optional["Volkorne"] = None,
         mother: Optional["Volkorne"] = None
     ) -> None:
         self.id: str = vol_id
         self.sex: str = sex
-        self.nb_repro: int = nb_repro
+        self.partenaire: str = partenaire
         self.father: Optional[Volkorne] = father
         self.mother: Optional[Volkorne] = mother
 
@@ -31,7 +31,7 @@ class Volkorne:
         m_id = self.mother.id if self.mother else None
         return (
             f"Volkorne(id={self.id}, sex={self.sex}, "
-            f"father={f_id}, mother={m_id}, nb_repro={self.nb_repro})"
+            f"father={f_id}, mother={m_id}, partenaire={self.partenaire})"
         )
 
 
@@ -47,7 +47,7 @@ class Elevage:
     def load_volkornes_from_csv(self, df: pd.DataFrame) -> None:
         """
         Charge les Volkornes depuis un DataFrame, crée les objets et
-        relie leurs parents en second temps.
+        relie leurs parents dans un second temps.
         """
         df.columns = df.columns.str.upper()
         for _, row in df.iterrows():
@@ -56,15 +56,15 @@ class Elevage:
             if sex == "NAN":
                 continue
 
-            nb_repro = 0
-            if 'NB_REPRO' in df.columns and not pd.isna(row['NB_REPRO']):
-                nb_repro = int(row['NB_REPRO'])
+            partenaire = "NAN"
+            if 'PARTENAIRE' in df.columns and not pd.isna(row['PARTENAIRE']):
+                partenaire = str(row['PARTENAIRE'])
 
             raw_parents = ""
             if 'PARENTS' in df.columns and not pd.isna(row['PARENTS']):
                 raw_parents = str(row['PARENTS']).strip()
 
-            vol = Volkorne(vol_id=vol_id, sex=sex, nb_repro=nb_repro)
+            vol = Volkorne(vol_id=vol_id, sex=sex, partenaire=partenaire)
             self.volkornes_dict[vol_id] = vol
             self.raw_parents_dict[vol_id] = raw_parents
 
@@ -99,7 +99,7 @@ class Elevage:
         net = Network(height="750px", width="100%", directed=True, notebook=notebook)
         for vol_id, vol in self.volkornes_dict.items():
             label = f"{vol.id}\n({vol.sex})"
-            title = f"ID: {vol.id}<br>Sexe: {vol.sex}<br>Repro: {vol.nb_repro}"
+            title = f"ID: {vol.id}<br>Sexe: {vol.sex}<br>Partenaire: {vol.partenaire}"
             color = "lightblue" if vol.sex == "MALE" else "pink"
             net.add_node(n_id=vol_id, label=label, title=title, color=color)
 
@@ -140,8 +140,7 @@ class Elevage:
 
     def _get_ancestors_with_distance(self, vol: Volkorne) -> Dict[str, int]:
         """
-        Renvoie {id_ancetre: distance_generations} pour tous les ancêtres d'un Volkorne,
-        via un parcours BFS.
+        Renvoie {id_ancetre: distance_generations} via un parcours BFS.
         """
         ancestors: Dict[str, int] = {}
         queue = deque([(vol, 0)])
@@ -168,11 +167,12 @@ class Elevage:
             r += 1.0 / (2 ** (anc1[ca] + anc2[ca]))
         return r
 
-    def get_candidates(self, max_repro: int = 2) -> Tuple[List[Volkorne], List[Volkorne]]:
+    def get_candidates(self) -> Tuple[List[Volkorne], List[Volkorne]]:
         """
-        Renvoie (males, females) pour nb_repro < max_repro.
+        Renvoie deux listes (males, females) : ceux qui n'ont pas encore de partenaire ("NAN").
         """
-        candidates = [v for v in self.volkornes_dict.values() if v.nb_repro < max_repro]
+        # On ne sélectionne que ceux qui n'ont pas encore de partenaire
+        candidates = [v for v in self.volkornes_dict.values() if v.partenaire == "NAN"]
         males = [v for v in candidates if v.sex == "MALE"]
         females = [v for v in candidates if v.sex == "FEMELLE"]
         return males, females
@@ -183,7 +183,7 @@ class Elevage:
         females: List[Volkorne]
     ) -> np.ndarray:
         """
-        Construit la matrice de consanguinité pour chaque (mâle, femelle).
+        Construit la matrice de consanguinité (mâle, femelle).
         """
         matrix: List[List[float]] = []
         for m in males:
@@ -225,14 +225,12 @@ class Elevage:
 
     def find_optimal_pairs(self) -> List[Tuple[Volkorne, Volkorne, float]]:
         """
-        1) Récupère (males, femelles),
-        2) Construit la matrice de consanguinité,
-        3) Trouve le matching optimal,
-        4) Retourne la liste (mâle, femelle, consanguinité) triée.
+        Détermine les appariements optimaux en minimisant la consanguinité.
         """
-        males, females = self.get_candidates(max_repro=2)
+        males, females = self.get_candidates()
         if not males or not females:
             return []
+
         cost_matrix = self.build_cost_matrix(males, females)
         row_ind, col_ind = self.solve_min_cost_matching(cost_matrix)
         return self.interpret_matching(males, females, row_ind, col_ind, cost_matrix)
@@ -240,16 +238,18 @@ class Elevage:
 
 if __name__ == "__main__":
     elevage = Elevage()
-    csv_path = "data/volkornes.csv"
+    csv_path = "data/vol.csv"
     df = pd.read_csv(csv_path)
     elevage.load_volkornes_from_csv(df)
 
-    # Exemple d'usage :
+    elevage.repr_volkornes()
+
+    # Exemple d'usage
     pairs = elevage.find_optimal_pairs()
     for male, fem, cons in pairs:
         print(f"Appariement: {male.id} x {fem.id} => consanguinité = {cons:.3f}")
 
-    # Heatmap de la matrice pour ces candidats
+    # Visualisation de la matrice
     males, females = elevage.get_candidates()
     matrix = elevage.build_cost_matrix(males, females)
     male_ids = [m.id for m in males]
@@ -268,5 +268,5 @@ if __name__ == "__main__":
     plt.title("Matrice de consanguinité")
     plt.show()
 
-    # Affichage de l'arbre généalogique
-    elevage.display_family_tree(notebook=False)
+    # Arbre généalogique
+    # elevage.display_family_tree(notebook=False)
