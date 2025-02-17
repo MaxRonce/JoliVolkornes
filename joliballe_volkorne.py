@@ -238,7 +238,7 @@ class Elevage:
 
 if __name__ == "__main__":
     elevage = Elevage()
-    csv_path = "data/vol.csv"
+    csv_path = "data/volkornes.csv"
     df = pd.read_csv(csv_path)
     elevage.load_volkornes_from_csv(df)
 
