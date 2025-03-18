@@ -44,6 +44,8 @@ class Elevage:
         self.volkornes_dict: Dict[str, Volkorne] = {}
         self.raw_parents_dict: Dict[str, str] = {}
 
+        self.fictive_parents: Dict[str, Volkorne] = {}
+
     def load_volkornes_from_csv(self, df: pd.DataFrame) -> None:
         """
         Charge les Volkornes depuis un DataFrame, crée les objets et
@@ -68,8 +70,10 @@ class Elevage:
             self.volkornes_dict[vol_id] = vol
             self.raw_parents_dict[vol_id] = raw_parents
 
+        # Deuxième passe : on relie effectivement les parents
         for vol_id, raw_parents in self.raw_parents_dict.items():
             if "+" in raw_parents:
+                # Deux parents séparés par '+'
                 parent_a_id, parent_b_id = raw_parents.split("+")
                 parent_a_id = parent_a_id.strip()
                 parent_b_id = parent_b_id.strip()
@@ -78,7 +82,29 @@ class Elevage:
                 if parent_a and parent_b:
                     self.volkornes_dict[vol_id].father = parent_a
                     self.volkornes_dict[vol_id].mother = parent_b
+
+            elif raw_parents:  # Un seul parent renseigné
+                unique_parent_id = raw_parents.strip()
+                parent = self.volkornes_dict.get(unique_parent_id)
+
+                # S'il n'existe pas encore dans le dict, on le crée
+                if not parent:
+                    parent = Volkorne(vol_id=unique_parent_id, sex="INCONNU")
+                    self.volkornes_dict[unique_parent_id] = parent
+
+                # On regarde s’il y a déjà un parent fictif pour ce parent unique
+                if unique_parent_id not in self.fictive_parents:
+                    fict_id = f"{unique_parent_id}_FICTIVE"
+                    fictive_parent = Volkorne(vol_id=fict_id, sex="FICTIF")
+                    self.volkornes_dict[fict_id] = fictive_parent
+                    self.fictive_parents[unique_parent_id] = fictive_parent
+
+                # On assigne father = parent réel et mother = parent fictif
+                self.volkornes_dict[vol_id].father = parent
+                self.volkornes_dict[vol_id].mother = self.fictive_parents[unique_parent_id]
+
             else:
+                # Aucun parent renseigné
                 self.volkornes_dict[vol_id].father = None
                 self.volkornes_dict[vol_id].mother = None
 
@@ -238,7 +264,7 @@ class Elevage:
 
 if __name__ == "__main__":
     elevage = Elevage()
-    csv_path = "data/Volkorne.xlsx - Feuil1.csv"
+    csv_path = "data/volkornes.csv"
     df = pd.read_csv(csv_path)
     elevage.load_volkornes_from_csv(df)
 
